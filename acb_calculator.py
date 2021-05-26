@@ -2,8 +2,8 @@
 
 '''
 Created on Apr. 3, 2021
+
 @author: chi
-updated by Kenny on 2021-05-24
 '''
 
 import pandas as pd
@@ -18,14 +18,14 @@ class ACB:
     def __init__(self, symbol):
         self.symbol = symbol
         self.shares = 0
-        self.total_acb = 0
+        self.cost = 0
         self.acb = 0
         self.capital_gain = 0
 
     def __str__(self):
         result = ""
         result += "Symbol: " + self.symbol
-        result += ", total ACB: " + str(self.total_acb)
+        result += ", total cost: " + str(self.cost)
         #result += ", ACB: " + str(self.acb)
         result += ", capital gain: " + str(self.capital_gain)
         result += ", shares: " + str(self.shares)
@@ -38,8 +38,8 @@ class ACB:
                 self.symbol, self.shares, shares))
 
         self.shares += shares
-        self.total_acb += price * shares + commission
-        self.acb = self.total_acb / self.shares
+        self.cost += price * shares + commission
+        self.acb = self.cost / self.shares
 
     # price, shares, commission all require to be NOT negative
     def Sell(self, price, shares, commission):
@@ -52,10 +52,10 @@ class ACB:
         old_acb = self.acb
 
         if new_shares == 0:
-            self.total_acb = 0
+            self.cost = 0
             self.acb = 0
         else:
-            self.total_acb = ( new_shares / old_shares ) * self.total_acb
+            self.cost = ( new_shares / old_shares ) * self.cost
             # average ACB is NOT changed when sell
 
         self.shares = new_shares
@@ -69,8 +69,8 @@ class ACBCalculator:
         self.input_file = input_file
         print("input file: ", self.input_file)
 
-        # a list of activities, e.g. buy or sell
-        # The list of activities is sorted by transaction date
+        # a list of activities, e.g. buy or sell; key=symbol
+        # The list of activities is then sorted by transaction date
         self.symbol_activities = {}
         
         # The dictionary key is transaction date
@@ -94,28 +94,15 @@ class ACBCalculator:
         result = pd.read_excel(self.input_file,filtered_worksheet)
         result = result.reindex(columns=filtered_columns)
         result = result[result['Action'].isin(filtered_actions)]
-        # print(result.info())
-        # print(result.head())
-        # get all the unique symbols
-        # for i, row in result.iterrows():
-        #     self.symbols[row['Symbol']] = 1
-        #pprint.pprint(self.symbols, width=1)        
-        for s in result['Symbol'].unique():
-            print(f'=== {s} starts ===')
+      
+        for s in result['Symbol'].unique():            
             self.symbol_activities[s] = []
-            for i in range(result.shape[0]):
-                symbol = result.iloc[i]['Symbol']
-
-                if ( s == symbol ):
-                    activity = list(result.iloc[i])
-                    self.symbol_activities[symbol].append(activity)
-                    #pprint.pprint(self.symbol_activities, width=1)
-                    print(activity)        
-            print(f'=== {s} ends ======\n')
-            #=========================================#
-            #wait = input("Press Enter to continue.")
-            #=========================================#
-
+            
+        for _, row in result.iterrows():            
+            self.symbol_activities[row['Symbol']].append(row.tolist())            
+        #=========================================#
+        #wait = input("Press Enter to continue.")
+        #=========================================#
         for symbol, activities in self.symbol_activities.items():
             # If during the same day, for one symbol there are multiple transactions
             # The order of buy and sell matters when calculating ACB and capital gain/loss
