@@ -163,6 +163,9 @@ class ACBCalculator:
                     print("WARNING -> Symbol {} buy transaction {} sell transaction {} on date {}".format
                           (symbol, daily_stats[0], daily_stats[1], date))
 def BRW(symbol_from, symbol_to):
+#To do list: for BRW action, if symbol is in the symbol_map dict key then 
+#a) reduce the qty of the shares and total_acb for symbol_from value w/o triggering capital gain
+#b) add the qty of the shares and total_act of symbol_to value
     symbol_map = {'DLR': ['DLR.TO', 'H038778']}
     print(symbol_map.get('DLR'))
     pass
