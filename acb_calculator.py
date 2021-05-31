@@ -1,9 +1,7 @@
-#! /usr/bin/python
-
 '''
-Created on Apr. 3, 2021
-
-@author: chi
+Created on May 26, 2021 
+@author: Kenny
+Based on the code by Chi
 '''
 
 import pandas as pd
@@ -11,55 +9,56 @@ import argparse
 import sys
 import os
 import textwrap
-import pprint
 #from pathlib import Path
 
 class ACB:
     def __init__(self, symbol):
         self.symbol = symbol
         self.shares = 0
-        self.cost = 0
-        self.acb = 0
-        self.capital_gain = 0
+        self.total_acb = 0        
+        self.total_capital_gain = 0
+        #{sell_date:[price,shares,commission,acb,capital_gain]}
+        self.dispositions = {}        
 
     def __str__(self):
         result = ""
         result += "Symbol: " + self.symbol
-        result += ", total cost: " + str(self.cost)
-        #result += ", ACB: " + str(self.acb)
-        result += ", capital gain: " + str(self.capital_gain)
+        result += ", total ACB: " + str(self.total_acb)        
+        result += ", capital gain: " + str(self.total_capital_gain)
         result += ", shares: " + str(self.shares)
         return result
-
-    # price, shares, commission all require to be NOT negative
+    
+    # after each transaction, the number of shares can NOT be negative
+    # negative shares means either BRW process failed or data error occured
+    def Check_Error(self, action, shares):
+        err_buy = (action == 'Buy' and self.shares + shares <= 0)
+        err_sell = (action == 'Sell' and self.shares - shares < 0)
+        if(err_buy or err_sell):
+            msg = f'{action} {self.symbol} {shares} share(s) error: '
+            msg += f'Current shares is {self.shares};'                
+            raise Exception(msg)
+        
     def Buy(self, price, shares, commission):
-        if (self.shares + shares <= 0):
-            raise Exception("Current shares for symbol {} is {}, buy {} shares".format(
-                self.symbol, self.shares, shares))
+        self.Check_Error('Buy', shares)
+        cost = price * shares + commission
+        
+        self.total_acb += cost
+        self.shares += shares        
 
-        self.shares += shares
-        self.cost += price * shares + commission
-        self.acb = self.cost / self.shares
-
-    # price, shares, commission all require to be NOT negative
-    def Sell(self, price, shares, commission):
-        if (self.shares - shares < 0):
-            raise Exception("Current shares for symbol {} is {}, sell {} shares".format(
-                self.symbol, self.shares, shares))
-
-        old_shares = self.shares
-        new_shares = old_shares - shares
-        old_acb = self.acb
-
-        if new_shares == 0:
-            self.cost = 0
-            self.acb = 0
-        else:
-            self.cost = ( new_shares / old_shares ) * self.cost
-            # average ACB is NOT changed when sell
-
-        self.shares = new_shares
-        self.capital_gain += price * shares - commission - old_acb * shares
+    def Sell(self, date, price, shares, commission):
+        self.Check_Error('Sell', shares)
+        proceeds = price * shares - commission
+        acb = self.total_acb/self.shares        
+        capital_gain = proceeds - (acb * shares)
+                
+        if self.dispositions.get(date) is None:
+            self.dispositions[date] = []
+        self.dispositions[date].append([price,shares,commission,acb,capital_gain])         
+        
+        # the sequence of the following variable assignment is important!        
+        self.total_acb = self.total_acb * ((self.shares-shares) / self.shares)  
+        self.shares -= shares
+        self.total_capital_gain += capital_gain
 
 class ACBCalculator:
     def __init__(self, input_file=None):
@@ -90,6 +89,7 @@ class ACBCalculator:
         filtered_columns = ["Transaction Date", "Action", "Symbol",
                             "Quantity", "Price", "Gross Amount",
                             "Commission", "Net Amount"]
+        #filtered_actions = ['Buy','Sell', 'BRW']
         filtered_actions = ['Buy','Sell']
         result = pd.read_excel(self.input_file,filtered_worksheet)
         result = result.reindex(columns=filtered_columns)
@@ -98,13 +98,13 @@ class ACBCalculator:
         for s in result['Symbol'].unique():            
             self.symbol_activities[s] = []
             
-        for _, row in result.iterrows():            
-            self.symbol_activities[row['Symbol']].append(row.tolist())            
-        #=========================================#
-        #wait = input("Press Enter to continue.")
-        #=========================================#
+        for _, row in result.iterrows():
+            s = row['Symbol']
+            if s=='H038778': continue # a fix when Action = BRW 
+            self.symbol_activities[s].append(row.tolist())            
+
         for symbol, activities in self.symbol_activities.items():
-            # If during the same day, for one symbol there are multiple transactions
+            # If during the same day, for one symbol there are multiple buy/sell transactions
             # The order of buy and sell matters when calculating ACB and capital gain/loss
             # if there are buy and sell. If the transactions are one side only, e.g.
             # only buy or only sell, the order does not matter.
@@ -115,7 +115,7 @@ class ACBCalculator:
             # years. It might vary a bit within a year but should be consistent across years
             # as long as you use the same order (sorting) when calculate carry-over from the previous
             # years.
-            # The code needs to alert if there are multiple transaction not one side only,
+            # The code needs to alert user if there are multiple transaction not one side only,
             # happened on the same day for the same symbol.
             activities.sort(key=lambda x:(x[0], x[1], x[4], x[3]))
 
@@ -143,19 +143,17 @@ class ACBCalculator:
                     self.symbol_ACB[symbol].Buy(price, shares, commission)
                 else:
                     daily_stats[1] += 1
-                    self.symbol_ACB[symbol].Sell(price, shares * -1, commission)
+                    self.symbol_ACB[symbol].Sell(date, price, shares * -1, commission)
 
                 print(activity)
                 print(self.symbol_ACB[symbol])
                 print()
                 #print(daily_stats)
             print("\n")
-
-        total_capital_gain = 0
+        
         for symbol, acb in self.symbol_ACB.items():
-            total_capital_gain += acb.capital_gain
-            print("Symbol {} capital gain {}, total capital gain {}".
-                  format(symbol, acb.capital_gain, total_capital_gain))
+            print("Symbol {}: total capital gain {}".
+                  format(symbol, acb.total_capital_gain))
 
         print("\n\n")
 
@@ -164,10 +162,14 @@ class ACBCalculator:
                 if daily_stats[0] > 0 and daily_stats[1] > 0:
                     print("WARNING -> Symbol {} buy transaction {} sell transaction {} on date {}".format
                           (symbol, daily_stats[0], daily_stats[1], date))
+def BRW(symbol_from, symbol_to):
+    symbol_map = {'DLR': ['DLR.TO', 'H038778']}
+    print(symbol_map.get('DLR'))
+    pass
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
-        description='''Script to calculate ACB (adjusted cost base) and capital gain or loss''',
+        description='''Script to calculate ACB (adjusted total_acb base) and capital gain or loss''',
         formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument("--input_file", default=None, type=str,
         help = textwrap.dedent(
