@@ -80,15 +80,15 @@ class ACBCalculator:
 
         # From symbol to its ACB
         self.symbol_ACB = {}
-        self.read_data()
+        self.read_file()
+        self.set_acb()
 
-    def read_data(self):
-        # read data from Activities worksheet
+    def read_file(self):
+        # read data from Activities worksheet and populate the symbol_activities dict.
         # keeps only the filtered columns and 'buy/sell' action type for ACB calculation
         filtered_worksheet = 'Activities'
-        filtered_columns = ["Transaction Date", "Action", "Symbol",
-                            "Quantity", "Price", "Gross Amount",
-                            "Commission", "Net Amount"]
+        filtered_columns = ["Transaction Date", "Action", "Symbol", "Quantity", 
+                        "Price", "Gross Amount", "Commission", "Net Amount"]
         #filtered_actions = ['Buy','Sell', 'BRW']
         filtered_actions = ['Buy','Sell']
         result = pd.read_excel(self.input_file,filtered_worksheet)
@@ -101,8 +101,9 @@ class ACBCalculator:
         for _, row in result.iterrows():
             s = row['Symbol']
             if s=='H038778': continue # a fix when Action = BRW 
-            self.symbol_activities[s].append(row.tolist())            
-
+            self.symbol_activities[s].append(row.tolist())    
+            
+    def set_acb(self):
         for symbol, activities in self.symbol_activities.items():
             # If during the same day, for one symbol there are multiple buy/sell transactions
             # The order of buy and sell matters when calculating ACB and capital gain/loss
