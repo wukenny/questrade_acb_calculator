@@ -1,7 +1,6 @@
 '''
 Created on May 26, 2021 
-@author: Kenny
-Based on the code by Chi
+@author: Kenny Wu
 '''
 
 import pandas as pd
